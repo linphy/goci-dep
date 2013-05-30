@@ -1,53 +1,50 @@
 package goci
 
-/*
-#include <oci.h>
-#include <stdlib.h>
-#include <string.h>
-
-#cgo pkg-config: oci8
-*/
-import "C"
 import (
 	"database/sql"
 	"database/sql/driver"
-	"errors"
-	"unsafe"
+	"github.com/egravert/goci/native"
+	"strings"
 )
-
-type drv struct{}
 
 func init() {
 	sql.Register("goci", &drv{})
 }
 
+type drv struct{}
+
+
+type transaction struct {
+  conn *connection
+}
+
 func (d *drv) Open(dsn string) (driver.Conn, error) {
-	conn := &connection{}
 
-	// initialize the oci environment used for all other oci calls
-	result := C.OCIEnvCreate((**C.OCIEnv)(unsafe.Pointer(&conn.env)), C.OCI_DEFAULT, nil, nil, nil, nil, 0, nil)
-	if result != C.OCI_SUCCESS {
-		return nil, errors.New("Failed: OCIEnvCreate()")
-	}
-
-	// error handle
-	result = C.OCIHandleAlloc(conn.env, &conn.err, C.OCI_HTYPE_ERROR, 0, nil)
-	if result != C.OCI_SUCCESS {
-		return nil, errors.New("Failed: OCIHandleAlloc() - creating error handle")
-	}
-
-	// Log in the user
-	err := conn.performLogon(dsn)
+	env, err := native.CreateEnvironment()
 	if err != nil {
 		return nil, err
 	}
-	return conn, nil
+
+	user, pwd, host := parseDsn(dsn)
+	svr, err := native.BasicLogin(env, user, pwd, host)
+	if err != nil {
+		return nil, err
+	}
+
+	return &connection{env, svr}, nil
 }
 
-func ociGetError(err unsafe.Pointer) error {
-	var errcode C.sb4
-	var errbuff [512]C.char
-	C.OCIErrorGet(err, 1, nil, &errcode, (*C.OraText)(unsafe.Pointer(&errbuff[0])), 512, C.OCI_HTYPE_ERROR)
-	s := C.GoString(&errbuff[0])
-	return errors.New(s)
+
+// expect the dsn in the format of: user/pwd@host:port/SID
+func parseDsn(dsn string) (user, pwd, host string) {
+	tokens := strings.SplitN(dsn, "@", 2)
+	if len(tokens) > 1 {
+		host = tokens[1]
+	}
+	userpass := strings.SplitN(tokens[0], "/", 2)
+	if len(userpass) > 1 {
+		pwd = userpass[1]
+	}
+	user = userpass[0]
+	return
 }

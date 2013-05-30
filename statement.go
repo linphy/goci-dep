@@ -1,22 +1,14 @@
 package goci
 
-/*
-#include <oci.h>
-#include <stdlib.h>
-#include <string.h>
-
-#cgo pkg-config: oci8
-*/
-import "C"
 import (
 	"database/sql/driver"
 	"fmt"
+	"github.com/egravert/goci/native"
 	"log"
-	"unsafe"
 )
 
 type statement struct {
-	handle unsafe.Pointer
+	handle *native.StmtHandle
 	conn   *connection
 	closed bool
 }
@@ -26,18 +18,15 @@ func (stmt *statement) Close() error {
 		return nil
 	}
 	stmt.closed = true
-	C.OCIHandleFree(stmt.handle, C.OCI_HTYPE_STMT)
-	stmt.handle = nil
-
 	return nil
 }
 
 func (stmt *statement) NumInput() int {
-	var num C.int
-	if r := C.OCIAttrGet(stmt.handle, C.OCI_HTYPE_STMT, unsafe.Pointer(&num), nil, C.OCI_ATTR_BIND_COUNT, (*C.OCIError)(stmt.conn.err)); r != C.OCI_SUCCESS {
-		log.Println(ociGetError(stmt.conn.err))
+	num, err := native.ParameterCount(stmt.handle)
+	if err != nil {
+		log.Println(err)
 	}
-	return int(num)
+	return num
 }
 
 // Exec executes a query that doesn't return rows, such
